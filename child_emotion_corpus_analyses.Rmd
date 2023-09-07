@@ -1,0 +1,880 @@
+---
+title: "child_emotion_corpus_analyses"
+author: "Steve Schwering"
+date: "11/21/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+In the following, we are going to take a look at a set of child-directed books and their use of emotion category labels.
+
+```{r, warning = FALSE, echo = FALSE, message = FALSE}
+d = read_csv("tidycorpus.csv")
+```
+
+Before we begin doing any analyses on the corpus, we want to take some time to familiarize ourselves with the corpus.
+
+```{r descriptive_info1, echo = FALSE, message = FALSE, include = FALSE}
+# How many different books are there?
+books = d %>%
+  select(doc_id) %>%
+  unique() %>%
+  pull(doc_id)
+
+# How many authors are there?
+#-- Author 1
+authors1 = d %>%
+  select(author1) %>%
+  unique() %>%
+  pull(author1)
+
+#-- Author 2
+authors2 = d %>%
+  select(author2) %>%
+  unique() %>%
+  pull(author2)
+
+#-- Any Author2 in Author1?
+intersect(authors1, authors2)
+```
+
+```{r descriptive_info2}
+# How many authors are there of each gender?
+d %>%
+  select(author1, author1_gender) %>%
+  unique() %>%
+  count(author1_gender)
+
+# How many books did each gender publish?
+d %>%
+  select(c(author1_gender, doc_id)) %>%
+  unique() %>%
+  group_by(author1_gender) %>%
+  count()
+
+# How many books did each author publish?
+d %>%
+  select(c(author1, doc_id)) %>%
+  unique() %>%
+  group_by(author1) %>%
+  count() %>%
+  arrange(desc(n))
+```
+
+We also want to normalize our frequency counts by the groups that we care about, so we need to get counts of the number of words in each book, the number of words published by each author, the number of words published by each gender, the number of words published each year, and the number of words published for each intended age.
+
+```{r normalizations, echo = FALSE}
+# How many words are in each book?
+words_count_book = d %>%
+  group_by(title, doc_id) %>%
+  count()
+
+# How many words did each author publish?
+words_count_author = d %>%
+  group_by(author1) %>%
+  count()
+
+# How many words did each gender publish?
+words_count_gender = d %>%
+  group_by(author1_gender) %>%
+  count()
+
+# How many words are in the corpus each year?
+words_count_year = d %>%
+  group_by(first_year_publish) %>%
+  count()
+
+# How many words are in each age bracket in the corpus?
+words_count_age = d %>%
+  group_by(age) %>%
+  count()
+```
+
+In the following figure, we can get a sense of the range of the number of words in the books in the corpus.
+
+```{r, warning = FALSE}
+words_count_book %>%
+  ggplot(aes(x = reorder(title, -log(n)), y = log(n))) +
+  geom_bar(stat = 'identity') +
+  scale_x_discrete(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = 'Book title',
+       y = 'Count (log) of words') +
+  theme(axis.text.x = element_text(size = 4,
+                                   angle = 45,
+                                   vjust = 1.0,
+                                   hjust = 1.0))
+```
+
+In the following, we can see the range of the number of words published by each author in the corpus.
+
+```{r, warning = FALSE}
+words_count_author %>%
+  ggplot(aes(x = reorder(author1, -log(n)), y = log(n))) +
+  geom_bar(stat = 'identity') +
+  scale_x_discrete(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = 'Author name',
+       y = 'Count (log) of words') +
+  theme(axis.text.x = element_text(size = 4, 
+                                   angle = 45, 
+                                   vjust = 1.0,
+                                   hjust = 1.0))
+```
+
+In the following, we can see the number of words published in each year in the corpus.
+
+```{r, warning = FALSE}
+words_count_year %>%
+  ggplot(aes(x = first_year_publish, y = log(n))) +
+  geom_point() +
+  geom_line() +
+  geom_smooth() +
+  scale_x_continuous(limits = c(1900, 2025), expand = c(0, 0)) +
+  scale_y_continuous(limits = c(0, 11), expand = c(0, 0)) +
+  labs(x = 'First publication year',
+       y = 'Count (log) of words')
+```
+
+In the following, we can see the number of words published for each intended age in the corpus.
+
+```{r, warning = FALSE}
+words_count_age %>%
+  ggplot(aes(x = age, y = log(n))) +
+  geom_point() +
+  geom_line() +
+  geom_smooth() +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = 'Reader age',
+       y = 'Count (log) of words')
+```
+
+I am curious about how many books we have per age bracket.
+
+```{r, warning = FALSE}
+d %>%
+  select(title, doc_id, age) %>%
+  group_by(age) %>%
+  summarise(n = n_distinct(title))
+```
+
+So in the above, it seems we are just tracking on to fluctuations in the number of books in each intended age range sampled in the corpus. We have more books for youger readers, more books for ages 4 and 5, and relatively few books for older readers.
+
+## How are emotion categories used in the corpus?
+
+Let's start analyzing how emotion category labels are used. First, we want to identify the emotion category labels we care about. Here we are reading in some dataframes with the target emotions and expanded emotions, and selecting the column corresponding to the emotion.
+
+Given these lists, we want to first look at the overall counts of the emotion category labels.
+
+```{r, warning = FALSE, include = FALSE}
+d_target_emotions = read_csv("target_emotions.csv") %>%
+  rename(lemma = word)
+target_emotions = d_target_emotions$lemma
+```
+
+Our target emotions are as follows:
+
+```{r, echo = FALSE}
+target_emotions
+```
+
+```{r, warning = FALSE}
+d_target = d %>%
+  left_join(d_target_emotions, by = 'lemma') %>%
+  filter(lemma %in% target_emotions)
+
+d_target %>%
+  group_by(lemma, emotion_type) %>%
+  count() %>%
+  arrange(desc(n))
+```
+
+```{r, warning = FALSE, include = FALSE}
+expanded_emotions = read_csv("expanded_emotions.csv")$word
+```
+
+Our expanded emotions are as follows:
+
+```{r, echo = FALSE}
+expanded_emotions
+```
+
+```{r, warning = FALSE}
+d_expanded = d %>%
+  filter(lemma %in% expanded_emotions)
+  
+d_expanded %>%
+  group_by(lemma) %>%
+  count() %>%
+  arrange(desc(n))
+```
+
+And we also selected words in the same family as our target emotion category labels:
+
+```{r}
+emotions_dir = paste(getwd(), "/emotion_labels_family", sep = "")
+emotion_files = fs::dir_ls(path = emotions_dir, recurse = TRUE, glob = "*.txt")
+  
+target_emotion_family = lapply(emotion_files, function(x) readLines(x, warn = F)) %>%
+  flatten_chr()
+
+rm(emotions_dir); rm(emotion_files)
+
+d_family = d %>%
+  filter(token %in% target_emotion_family)
+```
+
+## Log probability of emotion category labels across factors
+
+### Do different books use emotion category labels to different extents?
+
+```{r, warning = FALSE, echo = FALSE}
+freq_by_book_target = d_target %>%
+  group_by(doc_id) %>%
+  count() %>%
+  left_join(words_count_book, by = 'doc_id') %>%
+  mutate(prob_label = n.x / n.y,
+         l_prob_label = log(n.x / n.y)
+  ) %>%
+  arrange(desc(prob_label))
+
+freq_emot_by_book_target = d_target %>%
+  group_by(doc_id, lemma) %>%
+  count() %>%
+  left_join(words_count_book, by = 'doc_id') %>%
+  mutate(prob_label = n.x / n.y,
+         l_prob_label = log(n.x / n.y)
+  ) %>%
+  arrange(desc(prob_label))
+```
+
+In the following, we are going to look at the probability of emotions category labels (ECLs) per book, with the books sorted by their length. So, on the x-axis we see different books, with longer books on the left and shorter books on the right. On the y-axis, we see the probability of encountering an emotion category label in the book.
+
+In this first plot we see our "target" emotions.
+
+```{r, warning = FALSE}
+freq_by_book_target %>%
+  ggplot(aes(x = reorder(title, -log(n.y)), y = l_prob_label)) +
+  geom_bar(stat = 'identity') +
+  scale_x_discrete(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = 'Book title',
+       y = 'Log probability of ECLs per book') +
+  theme(axis.text.x = element_text(size = 4,
+                                   angle = 45,
+                                   vjust = 1.0,
+                                   hjust = 1.0))
+```
+
+It seems like shorter books are more likely to have an emotion category label in them.
+
+This is sort of a statistically necessary truth. As we are only plotting books with an emotion category label in them, and any word in the shorter book accounts for more of the probability in that book, then it would appear as though emotion category labels are becoming more probable in shorter books. Not quite sure how to word that.
+
+And now, we are going to split by emotion type to see if "simple" and "complex" emotions are treated differently.
+
+```{r}
+freq_by_book_target_type = d_target %>%
+  group_by(doc_id, emotion_type) %>%
+  count() %>%
+  left_join(words_count_book, by = 'doc_id') %>%
+  mutate(prob_label = n.x / n.y,
+         l_prob_label = log(n.x / n.y)
+  ) %>%
+  arrange(desc(prob_label))
+
+freq_by_book_target_type %>%
+  ggplot(aes(x = reorder(title, -log(n.y)), y = l_prob_label)) +
+  geom_bar(stat = 'identity') +
+  scale_x_discrete(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = 'Book title',
+       y = 'Log probability of ECLs per book') +
+  theme(axis.text.x = element_text(size = 4,
+                                   angle = 45,
+                                   vjust = 1.0,
+                                   hjust = 1.0)) +
+  facet_wrap(~emotion_type)
+```
+
+Now, we see the same figure for the "expanded" emotions.
+
+```{r, warning = FALSE, echo = FALSE}
+freq_by_book_expanded = d_expanded %>%
+  group_by(doc_id) %>%
+  count() %>%
+  left_join(words_count_book, by = 'doc_id') %>%
+  mutate(prob_label = n.x / n.y,
+         l_prob_label = log(n.x / n.y)
+  ) %>%
+  arrange(desc(prob_label))
+
+freq_emot_by_book_expanded = d_expanded %>%
+  group_by(doc_id, lemma) %>%
+  count() %>%
+  left_join(words_count_book, by = 'doc_id') %>%
+  mutate(prob_label = n.x / n.y,
+         l_prob_label = log(n.x / n.y)
+  ) %>%
+  arrange(desc(prob_label))
+```
+
+```{r, warning = FALSE}
+freq_by_book_expanded %>%
+  ggplot(aes(x = reorder(title, -log(n.y)), y = l_prob_label)) +
+  geom_bar(stat = 'identity') +
+  scale_x_discrete(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = 'Book title',
+       y = 'Log probability of ECLs per book') +
+  theme(axis.text.x = element_text(size = 4,
+                                   angle = 45,
+                                   vjust = 1.0,
+                                   hjust = 1.0))
+```
+
+And now we will look by our family of emotion category labels:
+
+```{r}
+freq_by_book_family = d_family %>%
+  group_by(doc_id) %>%
+  count() %>%
+  left_join(words_count_book, by = 'doc_id') %>%
+  mutate(prob_label = n.x / n.y,
+         l_prob_label = log(n.x / n.y)
+  ) %>%
+  arrange(desc(prob_label))
+
+freq_emot_by_book_family = d_family %>%
+  group_by(doc_id, lemma) %>%
+  count() %>%
+  left_join(words_count_book, by = 'doc_id') %>%
+  mutate(prob_label = n.x / n.y,
+         l_prob_label = log(n.x / n.y)
+  ) %>%
+  arrange(desc(prob_label))
+```
+
+```{r}
+freq_by_book_family %>%
+  ggplot(aes(x = reorder(title, -log(n.y)), y = l_prob_label)) +
+  geom_bar(stat = 'identity') +
+  scale_x_discrete(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = 'Book title',
+       y = 'Log probability of ECLs per book') +
+  theme(axis.text.x = element_text(size = 4,
+                                   angle = 45,
+                                   vjust = 1.0,
+                                   hjust = 1.0))
+```
+
+And splitting by emotion type
+
+```{r}
+freq_by_book_family_type = d_family %>%
+  group_by(doc_id, emotion_type) %>%
+  count() %>%
+  left_join(words_count_book, by = 'doc_id') %>%
+  mutate(prob_label = n.x / n.y,
+         l_prob_label = log(n.x / n.y)
+  ) %>%
+  arrange(desc(prob_label))
+
+freq_by_book_family_type %>%
+  ggplot(aes(x = reorder(title, -log(n.y)), y = l_prob_label)) +
+  geom_bar(stat = 'identity') +
+  scale_x_discrete(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = 'Book title',
+       y = 'Log probability of ECLs per book') +
+  theme(axis.text.x = element_text(size = 4,
+                                   angle = 45,
+                                   vjust = 1.0,
+                                   hjust = 1.0)) +
+  facet_wrap(~emotion_type)
+```
+
+### Do specific authors use emotion category labels to different extents?
+
+First, plotting for our target emotions.
+
+```{r, warning = FALSE, echo = FALSE}
+freq_by_author_target = d_target %>%
+  group_by(author1) %>%
+  count() %>%
+  left_join(words_count_author, by = 'author1') %>%
+  mutate(prob_label = n.x / n.y,
+         l_prob_label = log(n.x / n.y)
+  ) %>%
+  arrange(desc(prob_label))
+
+freq_emot_by_author_target = d_target %>%
+  group_by(author1, lemma) %>%
+  count() %>%
+  left_join(words_count_author, by = 'author1') %>%
+  mutate(prob_label = n.x / n.y,
+         l_prob_label = log(n.x / n.y)
+  ) %>%
+  arrange(desc(prob_label))
+```
+
+```{r, warning = FALSE}
+freq_by_author_target %>%
+  ggplot(aes(x = reorder(author1, -log(n.y)), y = l_prob_label)) +
+  geom_bar(stat = 'identity') +
+  scale_x_discrete(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0), limits = c(-10, 0)) +
+  labs(x = 'Author name',
+       y = 'Log probability of ECLs per author') +
+  theme(axis.text.x = element_text(size = 4,
+                                   angle = 45,
+                                   vjust = 1.0,
+                                   hjust = 1.0))
+```
+
+```{r}
+freq_by_author_target_type = d_target %>%
+  group_by(author1, emotion_type) %>%
+  count() %>%
+  left_join(words_count_author, by = 'author1') %>%
+  mutate(prob_label = n.x / n.y,
+         l_prob_label = log(n.x / n.y)
+  ) %>%
+  arrange(desc(prob_label))
+
+freq_by_author_target_type %>%
+  ggplot(aes(x = reorder(author1, -log(n.y)), y = l_prob_label)) +
+  geom_bar(stat = 'identity') +
+  scale_x_discrete(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0), limits = c(-10, 0)) +
+  labs(x = 'Author name',
+       y = 'Log probability of ECLs per author') +
+  theme(axis.text.x = element_text(size = 4,
+                                   angle = 45,
+                                   vjust = 1.0,
+                                   hjust = 1.0)) +
+  facet_wrap(~emotion_type)
+```
+
+Then plotting the larger emotion family.
+
+```{r}
+freq_by_author_family = d_family %>%
+  group_by(author1) %>%
+  count() %>%
+  left_join(words_count_author, by = 'author1') %>%
+  mutate(prob_label = n.x / n.y,
+         l_prob_label = log(n.x / n.y)
+  ) %>%
+  arrange(desc(prob_label))
+
+freq_emot_by_author_family = d_family %>%
+  group_by(author1, lemma) %>%
+  count() %>%
+  left_join(words_count_author, by = 'author1') %>%
+  mutate(prob_label = n.x / n.y,
+         l_prob_label = log(n.x / n.y)
+  ) %>%
+  arrange(desc(prob_label))
+```
+
+```{r}
+freq_by_author_family %>%
+  ggplot(aes(x = reorder(author1, -log(n.y)), y = l_prob_label)) +
+  geom_bar(stat = 'identity') +
+  scale_x_discrete(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0), limits = c(-10, 0)) +
+  labs(x = 'Author name',
+       y = 'Log probability of ECLs per author') +
+  theme(axis.text.x = element_text(size = 4,
+                                   angle = 45,
+                                   vjust = 1.0,
+                                   hjust = 1.0))
+```
+
+Then plotting by our expanded emotions.
+
+```{r, warning = FALSE, echo = FALSE}
+freq_by_author_expanded = d_expanded %>%
+  group_by(author1) %>%
+  count() %>%
+  left_join(words_count_author, by = 'author1') %>%
+  mutate(prob_label = n.x / n.y,
+         l_prob_label = log(n.x / n.y)
+  ) %>%
+  arrange(desc(prob_label))
+
+freq_emot_by_author_expanded = d_expanded %>%
+  group_by(author1, lemma) %>%
+  count() %>%
+  left_join(words_count_author, by = 'author1') %>%
+  mutate(prob_label = n.x / n.y,
+         l_prob_label = log(n.x / n.y)
+  ) %>%
+  arrange(desc(prob_label))
+```
+
+```{r, warning = FALSE}
+freq_by_author_expanded %>%
+  ggplot(aes(x = reorder(author1, -log(n.y)), y = l_prob_label)) +
+  geom_bar(stat = 'identity') +
+  scale_x_discrete(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0), limits = c(-10, 0)) +
+  labs(x = 'Author name',
+       y = 'Log probability of ECLs per author') +
+  theme(axis.text.x = element_text(size = 4,
+                                   angle = 45,
+                                   vjust = 1.0,
+                                   hjust = 1.0))
+```
+
+### Does author gender predict how emotion category labels are used?
+
+First getting a measure for our target emotions.
+
+```{r, warning = FALSE, echo = FALSE}
+freq_by_gender_target = d_target %>%
+  group_by(author1_gender) %>%
+  count() %>%
+  left_join(words_count_gender, by = 'author1_gender') %>%
+  mutate(prob_label = n.x / n.y,
+         l_prob_label = log(n.x / n.y)
+  )
+
+freq_by_gender_family = d_family %>%
+  group_by(author1_gender) %>%
+  count() %>%
+  left_join(words_count_gender, by = 'author1_gender') %>%
+  mutate(prob_label = n.x / n.y,
+         l_prob_label = log(n.x / n.y)
+  )
+
+freq_emot_by_gender_target = d_target %>%
+  group_by(author1_gender, lemma) %>%
+  count() %>%
+  left_join(words_count_gender, by = 'author1_gender') %>%
+  mutate(prob_label = n.x / n.y,
+         l_prob_label = log(n.x / n.y)
+  )
+
+freq_emot_by_gender_family = d_family %>%
+  group_by(author1_gender, lemma) %>%
+  count() %>%
+  left_join(words_count_gender, by = 'author1_gender') %>%
+  mutate(prob_label = n.x / n.y,
+         l_prob_label = log(n.x / n.y)
+  )
+```
+
+```{r}
+freq_by_gender_target_type = d_target %>%
+  group_by(author1_gender, emotion_type) %>%
+  count() %>%
+  left_join(words_count_gender, by = 'author1_gender') %>%
+  mutate(prob_label = n.x / n.y,
+         l_prob_label = log(n.x / n.y)
+  )
+```
+
+Then getting a measure for our expanded emotions.
+
+```{r, warning = FALSE}
+freq_by_gender_expanded = d_expanded %>%
+  group_by(author1_gender) %>%
+  count() %>%
+  left_join(words_count_gender, by = 'author1_gender') %>%
+  mutate(prob_label = n.x / n.y,
+         l_prob_label = log(n.x / n.y)
+  )
+
+freq_emot_by_gender_expanded = d_expanded %>%
+  group_by(author1_gender, lemma) %>%
+  count() %>%
+  left_join(words_count_gender, by = 'author1_gender') %>%
+  mutate(prob_label = n.x / n.y,
+         l_prob_label = log(n.x / n.y)
+  )
+```
+
+### Does publication year differentially predict use of emotion category labels?
+
+First taking a look at our target emotions.
+
+```{r, warning = FALSE, echo = FALSE}
+freq_by_publish_target = d_target %>%
+  group_by(first_year_publish) %>%
+  count() %>%
+  left_join(words_count_year, by = 'first_year_publish') %>%
+  mutate(prob_label = n.x / n.y,
+         l_prob_label = log(n.x / n.y)
+  )
+
+freq_by_publish_family = d_family %>%
+  group_by(first_year_publish) %>%
+  count() %>%
+  left_join(words_count_year, by = 'first_year_publish') %>%
+  mutate(prob_label = n.x / n.y,
+         l_prob_label = log(n.x / n.y)
+  )
+
+# And looking at numbers for different emotions
+freq_emot_by_publish_target = d_target %>%
+  group_by(first_year_publish, lemma) %>%
+  count() %>%
+  left_join(words_count_year, by = 'first_year_publish') %>%
+  mutate(prob_label = n.x / n.y,
+         l_prob_label = log(n.x / n.y)
+  ) %>%
+  arrange(lemma)
+
+freq_emot_by_publish_family = d_family %>%
+  group_by(first_year_publish, lemma) %>%
+  count() %>%
+  left_join(words_count_year, by = 'first_year_publish') %>%
+  mutate(prob_label = n.x / n.y,
+         l_prob_label = log(n.x / n.y)
+  ) %>%
+  arrange(lemma)
+```
+
+```{r, warning = FALSE}
+freq_by_publish_target %>%
+  ggplot(aes(x = first_year_publish, y = l_prob_label)) +
+  geom_point() +
+  geom_line() +
+  scale_y_continuous(expand = c(0, 0), limits = c(-10, 0)) +
+  labs(x = 'First publication year',
+       y = 'Log probability of ECLs per publication year')
+
+freq_emot_by_publish_target %>%
+  ggplot(aes(x = first_year_publish, y = l_prob_label, 
+             color = lemma, group = lemma)) +
+  geom_point() +
+  geom_line() +
+  scale_y_continuous(expand = c(0, 0), limits = c(-15, 0)) +
+  labs(x = 'First publication year',
+       y = 'Log probability of ECLs per publication year')
+```
+
+```{r, warning = FALSE}
+freq_by_publish_family %>%
+  ggplot(aes(x = first_year_publish, y = l_prob_label)) +
+  geom_point() +
+  geom_line() +
+  scale_y_continuous(expand = c(0, 0), limits = c(-10, 0)) +
+  labs(x = 'First publication year',
+       y = 'Log probability of ECLs per publication year')
+
+freq_emot_by_publish_family %>%
+  ggplot(aes(x = first_year_publish, y = l_prob_label, 
+             color = lemma, group = lemma)) +
+  geom_point() +
+  geom_line() +
+  scale_y_continuous(expand = c(0, 0), limits = c(-15, 0)) +
+  labs(x = 'First publication year',
+       y = 'Log probability of ECLs per publication year')
+```
+
+And splitting this data by emotion type.
+
+```{r}
+freq_by_publish_target_type = d_target %>%
+  group_by(first_year_publish, emotion_type) %>%
+  count() %>%
+  left_join(words_count_year, by = 'first_year_publish') %>%
+  mutate(prob_label = n.x / n.y,
+         l_prob_label = log(n.x / n.y)
+  )
+
+freq_by_publish_target_type %>%
+  ggplot(aes(x = first_year_publish, y = l_prob_label)) +
+  geom_point() +
+  geom_line() +
+  scale_y_continuous(expand = c(0, 0), limits = c(-10, 0)) +
+  labs(x = 'First publication year',
+       y = 'Log probability of ECLs per publication year') +
+  facet_wrap(~emotion_type)
+```
+
+Then plotting our expanded emotions.
+
+```{r, warning = FALSE, echo = FALSE}
+freq_by_publish_expanded = d_expanded %>%
+  group_by(first_year_publish) %>%
+  count() %>%
+  left_join(words_count_year, by = 'first_year_publish') %>%
+  mutate(prob_label = n.x / n.y,
+         l_prob_label = log(n.x / n.y)
+  )
+
+# And looking at numbers for different emotions
+freq_emot_by_publish_expanded = d_expanded %>%
+  group_by(first_year_publish, lemma) %>%
+  count() %>%
+  left_join(words_count_year, by = 'first_year_publish') %>%
+  mutate(prob_label = n.x / n.y,
+         l_prob_label = log(n.x / n.y)
+  ) %>%
+  arrange(lemma)
+```
+
+```{r, warning = FALSE}
+freq_by_publish_expanded %>%
+  ggplot(aes(x = first_year_publish, y = l_prob_label)) +
+  geom_point() +
+  geom_line() +
+  scale_y_continuous(expand = c(0, 0), limits = c(-10, 0)) +
+  labs(x = 'First publication year',
+       y = 'Log probability of ECLs per publication year')
+
+freq_emot_by_publish_expanded %>%
+  ggplot(aes(x = first_year_publish, y = l_prob_label, 
+             color = lemma, group = lemma)) +
+  geom_point() +
+  geom_line() +
+  scale_y_continuous(expand = c(0, 0), limits = c(-15, 0)) +
+  labs(x = 'First publication year',
+       y = 'Log probability of ECLs per publication year')
+```
+
+### Does intended age of the book predict use of emotion category labels?
+
+First plotting our target emotions.
+
+```{r, warning = FALSE, echo = FALSE}
+freq_by_age_target = d_target %>%
+  group_by(age) %>%
+  count() %>%
+  left_join(words_count_age, by = 'age') %>%
+  mutate(prob_label = n.x / n.y,
+         l_prob_label = log(n.x / n.y)
+  )
+
+freq_by_age_family = d_family %>%
+  group_by(age) %>%
+  count() %>%
+  left_join(words_count_age, by = 'age') %>%
+  mutate(prob_label = n.x / n.y,
+         l_prob_label = log(n.x / n.y)
+  )
+
+# And looking at numbers for different emotions
+freq_emot_by_age_target = d_target %>%
+  group_by(age, lemma) %>%
+  count() %>%
+  left_join(words_count_age, by = 'age') %>%
+  mutate(prob_label = n.x / n.y,
+         l_prob_label = log(n.x / n.y)) %>%
+  arrange(lemma)
+
+freq_emot_by_age_family = d_family %>%
+  group_by(age, lemma) %>%
+  count() %>%
+  left_join(words_count_age, by = 'age') %>%
+  mutate(prob_label = n.x / n.y,
+         l_prob_label = log(n.x / n.y)) %>%
+  arrange(lemma)
+```
+
+```{r, warning = FALSE}
+freq_by_age_target %>%
+  ggplot(aes(x = age, y = l_prob_label)) +
+  geom_point() +
+  geom_line() +
+  scale_y_continuous(expand = c(0, 0), limits = c(-10, 0)) +
+  labs(x = 'Intended age of the book (months)',
+       y = 'Log probability of ECLs per intended age')
+
+# Note the change in y-axis scale!
+freq_emot_by_age_target %>%
+  ggplot(aes(x = age, y = l_prob_label, color = lemma, group = lemma)) +
+  geom_point() +
+  geom_line() +
+  scale_y_continuous(expand = c(0, 0), limits = c(-15, 0)) +
+  labs(x = 'Intended age of book (months)',
+       y = 'Log probability of ECLs per intended age')
+```
+
+```{r, warning = FALSE}
+freq_by_age_family %>%
+  ggplot(aes(x = age, y = l_prob_label)) +
+  geom_point() +
+  geom_line() +
+  scale_y_continuous(expand = c(0, 0), limits = c(-10, 0)) +
+  labs(x = 'Intended age of the book (months)',
+       y = 'Log probability of ECLs per intended age')
+
+# Note the change in y-axis scale!
+freq_emot_by_age_family %>%
+  ggplot(aes(x = age, y = l_prob_label, color = lemma, group = lemma)) +
+  geom_point() +
+  geom_line() +
+  scale_y_continuous(expand = c(0, 0), limits = c(-15, 0)) +
+  labs(x = 'Intended age of book (months)',
+       y = 'Log probability of ECLs per intended age')
+```
+
+And then splitting these emotions by emotion type.
+
+```{r}
+freq_by_age_target_type = d_target %>%
+  group_by(age, emotion_type) %>%
+  count() %>%
+  left_join(words_count_age, by = 'age') %>%
+  mutate(prob_label = n.x / n.y,
+         l_prob_label = log(n.x / n.y)
+  )
+
+freq_by_age_target_type %>%
+  ggplot(aes(x = age, y = l_prob_label)) +
+  geom_point() +
+  geom_line() +
+  scale_y_continuous(expand = c(0, 0), limits = c(-15, 0)) +
+  labs(x = 'Intended age of book (months)',
+       y = 'Log probability of ECLs per intended age') +
+  facet_wrap(~emotion_type)
+```
+
+Then looking at our expanded emotions.
+
+```{r, warning = FALSE, echo = FALSE}
+freq_by_age_expanded = d_expanded %>%
+  group_by(age) %>%
+  count() %>%
+  left_join(words_count_age, by = 'age') %>%
+  mutate(prob_label = n.x / n.y,
+         l_prob_label = log(n.x / n.y)
+  )
+
+# And looking at numbers for different emotions
+freq_emot_by_age_expanded = d_expanded %>%
+  group_by(age, lemma) %>%
+  count() %>%
+  left_join(words_count_age, by = 'age') %>%
+  mutate(prob_label = n.x / n.y,
+         l_prob_label = log(n.x / n.y)) %>%
+  arrange(lemma)
+```
+
+```{r, warning = FALSE}
+freq_by_age_expanded %>%
+  ggplot(aes(x = age, y = l_prob_label)) +
+  geom_point() +
+  geom_line() +
+  scale_y_continuous(expand = c(0, 0), limits = c(-10, 0)) +
+  labs(x = 'Intended age (months)',
+       y = 'Log probability of ECLs per intended age')
+
+freq_emot_by_age_expanded %>%
+  ggplot(aes(x = age, y = l_prob_label, color = lemma, group = lemma)) +
+  geom_point() +
+  geom_line() +
+  scale_y_continuous(expand = c(0, 0), limits = c(-15, 0)) +
+  labs(x = 'Intended age (months)',
+       y = 'Log probability of ECLs per intended age')
+
+```

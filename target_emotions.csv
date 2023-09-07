@@ -1,0 +1,15 @@
+﻿word,emotion_type
+anger,simple
+joy,simple
+surprise,simple
+disgust,simple
+sadness,simple
+fear,simple
+amusement,complex
+despair,complex
+relief,complex
+anxiety,complex
+pleasure,complex
+irritation,complex
+interest,complex
+pride,complex

@@ -1,0 +1,290 @@
+---
+title: "emot_embeddings"
+author: "Steve Schwering"
+date: "9/17/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(Rtsne)
+library(plotly)
+```
+
+Read in all sentence contexts and their embeddings
+
+```{r}
+data_dir = paste(getwd(), "/embeddings/", sep = "")
+data_files = fs::dir_ls(path = data_dir, recurse = TRUE, glob = "*.csv")
+
+raw_data = data_files %>%
+  map(~read_csv(.)) %>%
+  bind_rows(., .id = "filename")
+```
+
+Categorize the document in which the emotion category label occurred
+
+```{r}
+raw_data = raw_data %>%
+  mutate(document_name = str_extract_all(document_name, "(?<=_)[a-zA-Z]+")) %>%
+  unnest(cols = c(document_name)) %>%
+  mutate(document_name = as.character(document_name),
+         document_category = if_else(document_name == 'fic', 'Fiction', 'Other'))
+```
+
+Copy just the embeddings
+
+```{r}
+d_embeddings = raw_data %>%
+  select(starts_with('embedding'))
+```
+
+## Generate and visualize the embeddings
+
+### Amusement
+
+```{r}
+amusement_raw = raw_data %>%
+  filter(target == 'amusement')
+
+amusement_embeddings = raw_data %>%
+  filter(target == 'amusement') %>%
+  select(starts_with('embedding'))
+```
+
+```{r}
+iterations = 5000
+
+initial_dims = 10
+perplexity = 30
+
+amusement_tsne = Rtsne(amusement_embeddings, 
+                dims = 2, 
+                initial_dims = initial_dims, 
+                perplexity = perplexity, 
+                theta = 0.10, 
+                verbose = TRUE, 
+                max_iter = iterations)
+
+d_amusement_tsne = data.frame(x = amusement_tsne$Y[,1], y = amusement_tsne$Y[,2], 
+                              word = amusement_raw$token,
+                              pos = amusement_raw$pos,
+                              doc = amusement_raw$document_category,
+                              sentence = amusement_raw$sentence_str)
+```
+
+```{r}
+d_amusement_tsne %>%
+  ggplot(aes(x = x, y = y, color = doc)) +
+  geom_point(alpha = 0.2)
+
+plot_ly(d_amusement_tsne, 
+        x = ~x,
+        y = ~y,
+        color = ~doc,
+        opacity = 0.50,
+        text = ~paste('Word: ', word, '\n', sentence, '\n', pos, '\n', doc)) %>%
+  add_markers() %>%
+  layout(scene = list(xaxis = list(title = 'x'),
+                      yaxis = list(title = 'y')),
+         legend = list(x = 100, y = 0.5))
+```
+
+### Anxiety
+
+```{r}
+anxiety_raw = raw_data %>%
+  filter(target == 'anxiety')
+
+anxiety_embeddings = raw_data %>%
+  filter(target == 'anxiety') %>%
+  select(starts_with('embedding'))
+```
+
+```{r}
+iterations = 5000
+
+initial_dims = 10
+perplexity = 30
+
+anxiety_tsne = Rtsne(anxiety_embeddings, 
+                dims = 2, 
+                initial_dims = initial_dims, 
+                perplexity = perplexity, 
+                theta = 0.10, 
+                verbose = TRUE, 
+                max_iter = iterations)
+
+d_anxiety_tsne = data.frame(x = anxiety_tsne$Y[,1], y = anxiety_tsne$Y[,2], 
+                            word = anxiety_raw$token,
+                            pos = anxiety_raw$pos,
+                            doc = anxiety_raw$document_category,
+                            sentence = anxiety_raw$sentence_str)
+```
+
+```{r}
+d_anxiety_tsne %>%
+  ggplot(aes(x = x, y = y, color = doc)) +
+  geom_point(alpha = 0.1)
+
+plot_ly(d_anxiety_tsne, 
+        x = ~x,
+        y = ~y,
+        color = ~doc,
+        opacity = 0.75,
+        text = ~paste('Word: ', word, '\n', sentence, '\n', pos, '\n', doc)) %>%
+  add_markers() %>%
+  layout(scene = list(xaxis = list(title = 'x'),
+                      yaxis = list(title = 'y')),
+         legend = list(x = 100, y = 0.5))
+```
+
+### Despair
+
+```{r}
+despair_raw = raw_data %>%
+  filter(target == 'despair')
+
+despair_embeddings = raw_data %>%
+  filter(target == 'despair') %>%
+  select(starts_with('embedding'))
+```
+
+```{r}
+iterations = 5000
+
+initial_dims = 10
+perplexity = 30
+
+despair_tsne = Rtsne(despair_embeddings, 
+                dims = 2, 
+                initial_dims = initial_dims, 
+                perplexity = perplexity, 
+                theta = 0.10, 
+                verbose = TRUE, 
+                max_iter = iterations)
+
+d_despair_tsne = data.frame(x = despair_tsne$Y[,1], y = despair_tsne$Y[,2], 
+                            word = despair_raw$token,
+                            pos = despair_raw$pos,
+                            doc = despair_raw$document_category,
+                            sentence = despair_raw$sentence_str)
+```
+
+```{r}
+d_despair_tsne %>%
+  ggplot(aes(x = x, y = y, color = doc)) +
+  geom_point(alpha = 0.2)
+
+plot_ly(d_despair_tsne, 
+        x = ~x,
+        y = ~y,
+        color = ~doc,
+        opacity = 0.75,
+        text = ~paste('Word: ', word, '\n', sentence, '\n', pos, '\n', doc)) %>%
+  add_markers() %>%
+  layout(scene = list(xaxis = list(title = 'x'),
+                      yaxis = list(title = 'y')),
+         legend = list(x = 100, y = 0.5))
+```
+
+### Pleasure
+
+```{r}
+pleasure_raw = raw_data %>%
+  filter(target == 'pleasure')
+
+pleasure_embeddings = raw_data %>%
+  filter(target == 'pleasure') %>%
+  select(starts_with('embedding'))
+```
+
+```{r}
+iterations = 5000
+
+initial_dims = 10
+perplexity = 30
+
+pleasure_tsne = Rtsne(pleasure_embeddings, 
+                dims = 2, 
+                initial_dims = initial_dims, 
+                perplexity = perplexity, 
+                theta = 0.10, 
+                verbose = TRUE, 
+                max_iter = iterations)
+
+d_pleasure_tsne = data.frame(x = pleasure_tsne$Y[,1], y = pleasure_tsne$Y[,2], 
+                            word = pleasure_raw$token,
+                            pos = pleasure_raw$pos,
+                            doc = pleasure_raw$document_category,
+                            sentence = pleasure_raw$sentence_str)
+```
+
+```{r}
+d_pleasure_tsne %>%
+  ggplot(aes(x = x, y = y, color = doc)) +
+  geom_point(alpha = 0.2)
+
+plot_ly(d_pleasure_tsne, 
+        x = ~x,
+        y = ~y,
+        color = ~doc,
+        opacity = 0.5,
+        text = ~paste('Word: ', word, '\n', sentence, '\n', pos, '\n', doc)) %>%
+  add_markers() %>%
+  layout(scene = list(xaxis = list(title = 'x'),
+                      yaxis = list(title = 'y')),
+         legend = list(x = 100, y = 0.5))
+```
+
+### Relief
+
+```{r}
+relief_raw = raw_data %>%
+  filter(target == 'relief')
+
+relief_embeddings = raw_data %>%
+  filter(target == 'relief') %>%
+  select(starts_with('embedding'))
+```
+
+```{r}
+iterations = 5000
+
+initial_dims = 10
+perplexity = 30
+
+relief_tsne = Rtsne(relief_embeddings, 
+                dims = 2, 
+                initial_dims = initial_dims, 
+                perplexity = perplexity, 
+                theta = 0.10, 
+                verbose = TRUE, 
+                max_iter = iterations)
+
+d_relief_tsne = data.frame(x = relief_tsne$Y[,1], y = relief_tsne$Y[,2], 
+                            word = relief_raw$token,
+                            pos = relief_raw$pos,
+                            doc = relief_raw$document_category,
+                            sentence = relief_raw$sentence_str)
+```
+
+```{r}
+d_relief_tsne %>%
+  ggplot(aes(x = x, y = y, color = doc)) +
+  geom_point(alpha = 0.2)
+
+plot_ly(d_relief_tsne, 
+        x = ~x,
+        y = ~y,
+        color = ~doc,
+        opacity = 0.50,
+        text = ~paste('Word: ', word, '\n', sentence, '\n', pos, '\n', doc)) %>%
+  add_markers() %>%
+  layout(scene = list(xaxis = list(title = 'x'),
+                      yaxis = list(title = 'y')),
+         legend = list(x = 100, y = 0.5))
+```
