@@ -1,0 +1,138 @@
+---
+title: "Childes"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(childesr)
+library(dplyr)
+library(stringr)
+library(tidyverse)
+```
+
+```{r}
+emotion_category_labels = sort(c("happy", "anger", "disgust", "anxiety", "amusement","joy", "fear", "interest","despair", "irritation", "pleasure", "pride", "sad", "relief", "suprise"))
+```
+
+```{r}
+d_emotion_tokens = get_tokens(token = emotion_category_labels,
+                        language = "eng",
+                        collection = "Eng-NA") %>%
+  mutate(gloss_lower = tolower(gloss))
+```
+
+```{r}
+emotion_category_labels
+sort(unique(d_emotion_tokens$gloss_lower)) # No despair, irritation, surprise
+```
+
+Get norms
+
+Get counts for how many words were spoken by each category across the entire corpus
+
+```{r}
+d_speaker_statistics = get_speaker_statistics(collection = "Eng-NA") %>%
+  filter(language == "eng")
+
+num_tokens = sum(d_speaker_statistics$num_tokens)
+
+# How many words did each speaker produce?
+d_count_speaker_role = d_speaker_statistics %>%
+  group_by(speaker_role) %>%
+  summarise(total_token_count_speaker_role = sum(num_tokens))
+
+# How many words were targeted at each age?
+d_count_age = d_speaker_statistics %>%
+  mutate(target_child_age_binned = cut(target_child_age, 
+                                       breaks = c(0, 12, 24, 36, 48, 60, Inf), 
+                                        labels = c("1", "2", "3", "4", "5", "6+"))) %>%
+  group_by(target_child_age_binned) %>%
+  summarise(total_token_count_age = sum(num_tokens))
+
+# How many word were targeted at each sex?
+d_count_sex = d_speaker_statistics %>%
+  group_by(target_child_sex) %>%
+  summarise(total_token_count_sex = sum(num_tokens))
+```
+
+Get counts for how many emotion category labels were spoken by each category within the corpus
+
+```{r}
+# How frequent are emotions?
+d_count_emotion = d_emotion_tokens %>%
+  group_by(gloss_lower) %>%
+  summarise(emotion_token_count = n())
+
+# Emotion -- speaker role
+d_count_emotion_by_speaker_role = d_emotion_tokens %>%
+  group_by(speaker_role, gloss_lower) %>%
+  summarise(emotion_token_count_speaker_role = n()) %>%
+  ungroup() %>%
+  complete(speaker_role, gloss_lower) %>%
+  left_join(d_count_speaker_role) %>%
+  mutate(probability_emotion_speaker_role = emotion_token_count_speaker_role / total_token_count_speaker_role,
+         l_probability_emotion_speaker_role = log(emotion_token_count_speaker_role / total_token_count_speaker_role))
+
+# Emotion -- target child age
+d_count_emotion_by_child_age = d_emotion_tokens %>%
+  mutate(target_child_age_binned = cut(target_child_age, 
+                                       breaks = c(0, 12, 24, 36, 48, 60, Inf), 
+                                        labels = c("1", "2", "3", "4", "5", "6+"))) %>%
+  group_by(target_child_age_binned, gloss_lower) %>%
+  summarise(emotion_token_count_age = n()) %>%
+  ungroup() %>%
+  complete(target_child_age_binned, gloss_lower) %>%
+  left_join(d_count_age) %>%
+  mutate(probability_emotion_age = emotion_token_count_age / total_token_count_age,
+         l_probability_emotion_age = log(emotion_token_count_age / total_token_count_age))
+
+# Emotion -- child sex
+d_count_emotion_by_sex = d_emotion_tokens %>%
+  group_by(target_child_sex, gloss_lower) %>%
+  summarise(emotion_token_count_sex = n()) %>%
+  ungroup() %>%
+  complete(target_child_sex, gloss_lower) %>%
+  left_join(d_count_sex) %>%
+  mutate(probability_emotion_sex = emotion_token_count_sex / total_token_count_sex,
+         l_probability_emotion_sex = log(emotion_token_count_sex / total_token_count_sex))
+```
+
+Visualizing
+
+Speaker
+
+```{r}
+d_count_emotion_by_speaker_role %>%
+  filter(!is.na(emotion_token_count_speaker_role)) %>%
+  filter(!is.na(speaker_role)) %>%
+  ggplot(aes(x = speaker_role, y = l_probability_emotion_speaker_role)) +
+    geom_point() +
+    facet_wrap(~gloss_lower) +
+    theme(axis.text.x = element_text(size = 6, angle = 45, vjust = 0.95, hjust = 0.95))
+```
+
+Age
+
+```{r}
+d_count_emotion_by_child_age %>%
+  filter(!is.na(emotion_token_count_age)) %>%
+  filter(!is.na(target_child_age_binned)) %>%
+  ggplot(aes(x = target_child_age_binned, y = l_probability_emotion_age)) +
+    geom_point() +
+    facet_wrap(~gloss_lower)
+```
+
+Sex
+
+```{r}
+d_count_emotion_by_sex %>%
+  filter(!is.na(emotion_token_count_sex)) %>%
+  filter(!is.na(target_child_sex)) %>%
+  ggplot(aes(x = target_child_sex, y = l_probability_emotion_sex)) +
+    geom_point() +
+    facet_wrap(~gloss_lower)
+```
