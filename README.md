@@ -1,0 +1,1 @@
+This is a continuation of the [emotion fiction project](https://github.com/steveSchwering/emotion_use_fiction) looking at how emotion category labels are used in child-directed books and speech. While we found some interesting differences in adult data, we did not find any interesting differences in how the tokesn are used in child-directed speech!
